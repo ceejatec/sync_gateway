@@ -28,7 +28,7 @@ const (
 
 )
 
-type kvChannelIndex struct {
+type KvChannelIndex struct {
 	indexBucket            base.Bucket             // Database connection (used for connection queries)
 	channelName            string                  // Channel name
 	lastPolledChanges      []*LogEntry             // Set of changes found in most recent polling.  Optimization for scenario where multiple continuous changes listeners are awakened at once
@@ -41,12 +41,11 @@ type kvChannelIndex struct {
 	onChange               func(base.Set)          // Notification callback
 	clock                  *base.SequenceClockImpl // Channel clock
 	channelStorage         ChannelStorage          // Channel storage - manages interaction with the index format
-	channelIndexType       string                  // Optional type (writer, reader) - used for logging only
 }
 
-func NewKvChannelIndex(channelName string, bucket base.Bucket, partitions *base.IndexPartitions, onChangeCallback func(base.Set)) *kvChannelIndex {
+func NewKvChannelIndex(channelName string, bucket base.Bucket, partitions *base.IndexPartitions, onChangeCallback func(base.Set)) *KvChannelIndex {
 
-	channelIndex := &kvChannelIndex{
+	channelIndex := &KvChannelIndex{
 		channelName:    channelName,
 		indexBucket:    bucket,
 		onChange:       onChangeCallback,
@@ -63,7 +62,7 @@ func NewKvChannelIndex(channelName string, bucket base.Bucket, partitions *base.
 // Index Writing
 //
 
-func (k *kvChannelIndex) Add(entry *LogEntry) error {
+func (k *KvChannelIndex) Add(entry *LogEntry) error {
 	// Update the sequence in the appropriate cache block
 	entries := make([]*LogEntry, 1)
 	entries[0] = entry
@@ -71,7 +70,7 @@ func (k *kvChannelIndex) Add(entry *LogEntry) error {
 }
 
 // Adds a set
-func (k *kvChannelIndex) AddSet(entries []*LogEntry) error {
+func (k *KvChannelIndex) AddSet(entries []*LogEntry) error {
 	base.LogTo("DIndex+", "Adding set of %d entries to channel %s", len(entries), k.channelName)
 
 	clockUpdates, err := k.channelStorage.AddEntrySet(entries)
@@ -88,11 +87,11 @@ func (k *kvChannelIndex) AddSet(entries []*LogEntry) error {
 	return err
 }
 
-func (k *kvChannelIndex) Compact() {
+func (k *KvChannelIndex) Compact() {
 	// TODO: for each index block being cached, check whether expired
 }
 
-func (k *kvChannelIndex) updateIndexCount() error {
+func (k *KvChannelIndex) updateIndexCount() error {
 
 	// increment index count
 	key := getIndexCountKey(k.channelName)
@@ -107,12 +106,7 @@ func (k *kvChannelIndex) updateIndexCount() error {
 
 }
 
-// Set channel index type for logging, diagnostics
-func (k *kvChannelIndex) setType(channelIndexType string) {
-	k.channelIndexType = channelIndexType
-}
-
-func (k *kvChannelIndex) pollForChanges(stableClock base.SequenceClock, newChannelClock base.SequenceClock) (hasChanges bool, cancelPolling bool) {
+func (k *KvChannelIndex) pollForChanges(stableClock base.SequenceClock, newChannelClock base.SequenceClock) (hasChanges bool, cancelPolling bool) {
 
 	changeCacheExpvars.Add(fmt.Sprintf("pollCount-%s", k.channelName), 1)
 	// Increment the overall poll count since a changes request (regardless of whether there have been polled changes)
@@ -164,7 +158,7 @@ func (k *kvChannelIndex) pollForChanges(stableClock base.SequenceClock, newChann
 	return true, false
 }
 
-func (k *kvChannelIndex) updateLastPolled(stableSequence base.SequenceClock, newChannelClock base.SequenceClock) error {
+func (k *KvChannelIndex) updateLastPolled(stableSequence base.SequenceClock, newChannelClock base.SequenceClock) error {
 
 	// Get changes since the last clock
 	recentChanges, err := k.channelStorage.GetChanges(k.lastPolledChannelClock, newChannelClock)
@@ -185,7 +179,7 @@ func (k *kvChannelIndex) updateLastPolled(stableSequence base.SequenceClock, new
 	return nil
 }
 
-func (k *kvChannelIndex) checkLastPolled(since base.SequenceClock) (results []*LogEntry) {
+func (k *KvChannelIndex) checkLastPolled(since base.SequenceClock) (results []*LogEntry) {
 
 	k.lastPolledLock.RLock()
 	defer k.lastPolledLock.RUnlock()
@@ -230,7 +224,7 @@ func (k *kvChannelIndex) checkLastPolled(since base.SequenceClock) (results []*L
 // Returns the set of index entries for the channel more recent than the
 // specified since SequenceClock.  Index entries with sequence values greater than
 // the index stable sequence are not returned.
-func (k *kvChannelIndex) getChanges(since base.SequenceClock) ([]*LogEntry, error) {
+func (k *KvChannelIndex) getChanges(since base.SequenceClock) ([]*LogEntry, error) {
 
 	var results []*LogEntry
 
@@ -271,7 +265,7 @@ func (k *kvChannelIndex) getChanges(since base.SequenceClock) ([]*LogEntry, erro
 	return k.channelStorage.GetChanges(since, chanClock)
 }
 
-func (k *kvChannelIndex) getIndexCounter() (uint64, error) {
+func (k *KvChannelIndex) getIndexCounter() (uint64, error) {
 	key := getIndexCountKey(k.channelName)
 	var intValue uint64
 	_, err := k.indexBucket.Get(key, &intValue)
@@ -282,7 +276,7 @@ func (k *kvChannelIndex) getIndexCounter() (uint64, error) {
 	return intValue, nil
 }
 
-func (k *kvChannelIndex) getChannelClock() (base.SequenceClock, error) {
+func (k *KvChannelIndex) getChannelClock() (base.SequenceClock, error) {
 
 	var channelClock base.SequenceClock
 	var err error
@@ -302,7 +296,7 @@ func (k *kvChannelIndex) getChannelClock() (base.SequenceClock, error) {
 
 }
 
-func (k *kvChannelIndex) loadChannelClock() (base.SequenceClock, error) {
+func (k *KvChannelIndex) loadChannelClock() (base.SequenceClock, error) {
 
 	chanClock := base.NewSyncSequenceClock()
 	key := getChannelClockKey(k.channelName)
@@ -319,11 +313,11 @@ func (k *kvChannelIndex) loadChannelClock() (base.SequenceClock, error) {
 }
 
 // Determine the cache block index for a sequence
-func (k *kvChannelIndex) getBlockIndex(sequence uint64) uint16 {
+func (k *KvChannelIndex) getBlockIndex(sequence uint64) uint16 {
 	return uint16(sequence / byteIndexBlockCapacity)
 }
 
-func (k *kvChannelIndex) loadClock() {
+func (k *KvChannelIndex) loadClock() {
 
 	if k.clock == nil {
 		k.clock = base.NewSequenceClockImpl()
@@ -336,7 +330,7 @@ func (k *kvChannelIndex) loadClock() {
 	k.clock.SetCas(cas)
 }
 
-func (k *kvChannelIndex) writeClockCas(updateClock base.SequenceClock) error {
+func (k *KvChannelIndex) writeClockCas(updateClock base.SequenceClock) error {
 	// Initial set, for the first cas update attempt
 	k.clock.UpdateWithClock(updateClock)
 	value, err := k.clock.Marshal()

@@ -23,7 +23,7 @@ type kvChangeIndexReader struct {
 	indexReadBucket           base.Bucket                // Index bucket
 	readerStableSequence      *base.ShardedClock         // Initialized on first polling, updated on subsequent polls
 	readerStableSequenceLock  sync.RWMutex               // Coordinates read access to channel index reader map
-	channelIndexReaders       map[string]*kvChannelIndex // Manages read access to channel.  Map indexed by channel name.
+	channelIndexReaders       map[string]*KvChannelIndex // Manages read access to channel.  Map indexed by channel name.
 	channelIndexReaderLock    sync.RWMutex               // Coordinates read access to channel index reader map
 	onChange                  func(base.Set)             // Client callback that notifies of channel changes
 	terminator                chan struct{}              // Ends polling	indexPartitions *base.IndexPartitions
@@ -38,7 +38,7 @@ type kvChangeIndexReader struct {
 
 func (k *kvChangeIndexReader) Init(options *CacheOptions, indexOptions *ChangeIndexOptions, onChange func(base.Set), indexPartitionsCallback IndexPartitionsFunc) (err error) {
 
-	k.channelIndexReaders = make(map[string]*kvChannelIndex)
+	k.channelIndexReaders = make(map[string]*KvChannelIndex)
 	k.indexPartitionsCallback = indexPartitionsCallback
 	k.activePrincipalCounts = make(map[string]uint64)
 
@@ -104,7 +104,7 @@ func (k *kvChangeIndexReader) Init(options *CacheOptions, indexOptions *ChangeIn
 }
 
 func (k *kvChangeIndexReader) Clear() {
-	k.channelIndexReaders = make(map[string]*kvChannelIndex)
+	k.channelIndexReaders = make(map[string]*KvChannelIndex)
 }
 
 func (k *kvChangeIndexReader) Stop() {
@@ -251,7 +251,7 @@ func (k *kvChangeIndexReader) GetChanges(channelName string, options ChangesOpti
 	return changes, nil
 }
 
-func (k *kvChangeIndexReader) getOrCreateReader(channelName string, options ChangesOptions) (*kvChannelIndex, error) {
+func (k *kvChangeIndexReader) getOrCreateReader(channelName string, options ChangesOptions) (*KvChannelIndex, error) {
 
 	// For continuous or longpoll processing, use the shared reader from the channelindexReaders map to coordinate
 	// polling.
@@ -278,14 +278,14 @@ func (k *kvChangeIndexReader) getOrCreateReader(channelName string, options Chan
 	}
 }
 
-func (k *kvChangeIndexReader) getChannelReader(channelName string) *kvChannelIndex {
+func (k *kvChangeIndexReader) getChannelReader(channelName string) *KvChannelIndex {
 
 	k.channelIndexReaderLock.RLock()
 	defer k.channelIndexReaderLock.RUnlock()
 	return k.channelIndexReaders[channelName]
 }
 
-func (k *kvChangeIndexReader) newChannelReader(channelName string) (*kvChannelIndex, error) {
+func (k *kvChangeIndexReader) newChannelReader(channelName string) (*KvChannelIndex, error) {
 
 	k.channelIndexReaderLock.Lock()
 	defer k.channelIndexReaderLock.Unlock()
@@ -298,7 +298,6 @@ func (k *kvChangeIndexReader) newChannelReader(channelName string) (*kvChannelIn
 		return nil, err
 	}
 	k.channelIndexReaders[channelName] = NewKvChannelIndex(channelName, k.indexReadBucket, indexPartitions, k.onChange)
-	k.channelIndexReaders[channelName].setType("reader")
 	indexExpvars.Add("pollingChannels_active", 1)
 	return k.channelIndexReaders[channelName], nil
 }
@@ -340,7 +339,7 @@ func (k *kvChangeIndexReader) pollReaders() bool {
 	for _, reader := range k.channelIndexReaders {
 		// For each channel, unmarshal new channel clock, then check with reader whether this represents changes
 		wg.Add(1)
-		go func(reader *kvChannelIndex, wg *sync.WaitGroup) {
+		go func(reader *KvChannelIndex, wg *sync.WaitGroup) {
 			defer func() {
 				wg.Done()
 			}()
